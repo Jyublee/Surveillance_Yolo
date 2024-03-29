@@ -1,0 +1,5 @@
+-- Modify the Delay to give accurate logs
+
+-- Add Function to Save the footage as photos or videos when detection occurs 
+
+-- Add potenical Front end and UI 
