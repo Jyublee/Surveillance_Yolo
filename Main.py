@@ -5,6 +5,7 @@ from time import time
 from datetime import datetime
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator, colors
+import os
 
 class ObjectDetection:
     def __init__(self, capture_index):
@@ -16,8 +17,12 @@ class ObjectDetection:
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.person_ids = {}
         self.next_person_id = 1
-        self.log_delay = 5.0  # Increased delay to 5 seconds between consecutive logs
-        self.last_log_time = {}  # Dictionary to store last log time for each person
+        self.log_delay = 5.0
+        self.last_log_time = {}
+        self.recording = False
+        self.video_writer = None
+        self.last_person_detection_time = 0
+        self.recording_stop_delay = 5.0  # 5 seconds delay after person exits the frame (To avoid unwanted creation of multiple recordings)
 
     def predict(self, im0):
         results = self.model(im0)
@@ -89,6 +94,33 @@ class ObjectDetection:
         person_center = (x1 + x2) // 2
         return "side A" if person_center < frame_center else "side B"
 
+    def feed_record(self, im0):
+        if self.recording:
+            # blinking red circle 
+            circle_radius = 10
+            circle_color = (0, 0, 255) 
+            circle_thickness = -1  
+            circle_position = (im0.shape[1] - 30, 15) 
+            
+            if int(time()) % 2 == 0:  # Blink the circle every second
+                cv2.circle(im0, circle_position, circle_radius, circle_color, circle_thickness)
+            
+            # "Recording" text
+            text = " Recording"
+            text_color = (0, 0, 255) 
+            text_position = (im0.shape[1] - 150, 20)  
+            cv2.putText(im0, text, text_position, cv2.FONT_HERSHEY_SIMPLEX, 0.6, text_color, 2, cv2.LINE_AA)
+            
+            # Timestamp
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cv2.putText(im0, timestamp, (10, im0.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2, cv2.LINE_AA)
+            self.video_writer.write(im0)
+            
+            self.video_writer.write(im0)
+
+
+
+
     def __call__(self):
         cap = cv2.VideoCapture(self.capture_index)
         assert cap.isOpened()
@@ -102,12 +134,25 @@ class ObjectDetection:
             results = self.predict(im0)
             im0, class_ids = self.plot_bboxes(results, im0)
             
+            person_detected = False
             for box, cls in zip(results[0].boxes.xyxy.cpu(), results[0].boxes.cls.cpu().tolist()):
-                if cls == 0:  # Check if person detected
+                if cls == 0:
+                    person_detected = True
                     person_id = self.assign_person_id(box.tolist())
                     side = self.determine_side(box.tolist())
                     self.log_event(person_id, side)
+                    self.last_person_detection_time = time()
 
+            if person_detected and not self.recording:
+                self.recording = True
+                os.makedirs("recordings", exist_ok=True)
+                self.video_writer = cv2.VideoWriter(f"recordings/recording_{datetime.now().strftime('%Y%m%d%H%M%S')}.mp4", cv2.VideoWriter_fourcc(*'mp4v'), 30, (self.frame_width, self.frame_height))
+            elif not person_detected and self.recording and time() - self.last_person_detection_time >= self.recording_stop_delay:
+                self.recording = False
+                self.video_writer.release()
+                self.video_writer = None
+
+            self.feed_record(im0)
             self.display_fps(im0)
             cv2.imshow('YOLOv8 Detection', im0)
             
