@@ -22,11 +22,57 @@ class ObjectDetection:
         self.recording = False
         self.video_writer = None
         self.last_person_detection_time = 0
-        self.recording_stop_delay = 5.0  # 5 seconds delay after person exits the frame (To avoid unwanted creation of multiple recordings)
+        self.recording_stop_delay = 5.0
+        self.iou_threshold = 0.5  # IOU threshold for NMS
 
     def predict(self, im0):
         results = self.model(im0)
         return results
+    
+    def non_max_suppression(self, boxes, scores, iou_threshold):
+        # If no boxes, return an empty list
+        if len(boxes) == 0:
+            return []
+
+        # Initialize the list of picked indexes
+        pick = []
+
+        # Grab the coordinates of the bounding boxes
+        x1 = boxes[:, 0].numpy()
+        y1 = boxes[:, 1].numpy()
+        x2 = boxes[:, 2].numpy()
+        y2 = boxes[:, 3].numpy()
+
+        # Compute the area of the bounding boxes and sort by scores
+        area = (x2 - x1 + 1) * (y2 - y1 + 1)
+        idxs = np.argsort(scores.numpy())
+
+        # Keep looping while some indexes still remain in the indexes list
+        while len(idxs) > 0:
+            # Grab the last index in the indexes list and add the index value to the list of picked indexes
+            last = len(idxs) - 1
+            i = idxs[last]
+            pick.append(i)
+
+            # Find the largest (x, y) coordinates for the start of the bounding box and the smallest (x, y) coordinates for the end of the bounding box
+            xx1 = np.maximum(x1[i], x1[idxs[:last]])
+            yy1 = np.maximum(y1[i], y1[idxs[:last]])
+            xx2 = np.minimum(x2[i], x2[idxs[:last]])
+            yy2 = np.minimum(y2[i], y2[idxs[:last]])
+
+            # Compute the width and height of the bounding box
+            w = np.maximum(0, xx2 - xx1 + 1)
+            h = np.maximum(0, yy2 - yy1 + 1)
+
+            # Compute the ratio of overlap
+            overlap = (w * h) / area[idxs[:last]]
+
+            # Delete all indexes from the index list that have overlap greater than the provided overlap threshold
+            idxs = np.delete(idxs, np.concatenate(([last], np.where(overlap > iou_threshold)[0])))
+
+        # Return only the bounding boxes that were picked
+        return boxes[pick].cpu().numpy().astype("int")
+
 
     def display_fps(self, im0):
         self.end_time = time()
@@ -41,11 +87,22 @@ class ObjectDetection:
         class_ids = []
         self.annotator = Annotator(im0, 3, results[0].names)
         boxes = results[0].boxes.xyxy.cpu()
+        scores = results[0].boxes.conf.cpu()
         clss = results[0].boxes.cls.cpu().tolist()
         names = results[0].names
-        for box, cls in zip(boxes, clss):
-            class_ids.append(cls)
-            self.annotator.box_label(box, label=names[int(cls)], color=colors(int(cls), True))
+
+        # Filter for person class only (class ID 0)
+        person_mask = [cls == 0 for cls in clss]
+        person_boxes = boxes[person_mask]
+        person_scores = scores[person_mask]
+
+        # Apply NMS
+        nms_boxes = self.non_max_suppression(person_boxes, person_scores, self.iou_threshold)
+
+        for box in nms_boxes:
+            class_ids.append(0)  # Person class ID
+            self.annotator.box_label(box, label=names[0], color=colors(0, True))
+
         return im0, class_ids
 
     def assign_person_id(self, box):
@@ -115,11 +172,6 @@ class ObjectDetection:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cv2.putText(im0, timestamp, (10, im0.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2, cv2.LINE_AA)
             self.video_writer.write(im0)
-            
-            self.video_writer.write(im0)
-
-
-
 
     def __call__(self):
         cap = cv2.VideoCapture(self.capture_index)
