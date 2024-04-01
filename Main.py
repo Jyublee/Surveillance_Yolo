@@ -180,37 +180,47 @@ class ObjectDetection:
         self.frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         
         while True:
-            self.start_time = time()
-            ret, im0 = cap.read()
-            assert ret
-            results = self.predict(im0)
-            im0, class_ids = self.plot_bboxes(results, im0)
-            
-            person_detected = False
-            for box, cls in zip(results[0].boxes.xyxy.cpu(), results[0].boxes.cls.cpu().tolist()):
-                if cls == 0:
-                    person_detected = True
-                    person_id = self.assign_person_id(box.tolist())
-                    side = self.determine_side(box.tolist())
-                    self.log_event(person_id, side)
-                    self.last_person_detection_time = time()
+            # Check if the current time is within the specified time frame
+            current_time = datetime.now().time()
+            start_time = datetime.strptime("11:00:00", "%H:%M:%S").time()            #Time Input for starting time 
+            end_time = datetime.strptime("13:00:00", "%H:%M:%S").time()              #Time Input for ending time 
 
-            if person_detected and not self.recording:
-                self.recording = True
-                os.makedirs("recordings", exist_ok=True)
-                self.video_writer = cv2.VideoWriter(f"recordings/recording_{datetime.now().strftime('%Y%m%d%H%M%S')}.mp4", cv2.VideoWriter_fourcc(*'mp4v'), 30, (self.frame_width, self.frame_height))
-            elif not person_detected and self.recording and time() - self.last_person_detection_time >= self.recording_stop_delay:
-                self.recording = False
-                self.video_writer.release()
-                self.video_writer = None
+            if start_time <= current_time <= end_time:
+                self.start_time = time()
+                ret, im0 = cap.read()
+                assert ret
+                results = self.predict(im0)
+                im0, class_ids = self.plot_bboxes(results, im0)
+                
+                person_detected = False
+                for box, cls in zip(results[0].boxes.xyxy.cpu(), results[0].boxes.cls.cpu().tolist()):
+                    if cls == 0:
+                        person_detected = True
+                        person_id = self.assign_person_id(box.tolist())
+                        side = self.determine_side(box.tolist())
+                        self.log_event(person_id, side)
+                        self.last_person_detection_time = time()
 
-            self.feed_record(im0)
-            self.display_fps(im0)
-            cv2.imshow('YOLOv8 Detection', im0)
+                if person_detected and not self.recording:
+                    self.recording = True
+                    os.makedirs("recordings", exist_ok=True)
+                    self.video_writer = cv2.VideoWriter(f"recordings/recording_{datetime.now().strftime('%Y%m%d%H%M%S')}.mp4", cv2.VideoWriter_fourcc(*'mp4v'), 30, (self.frame_width, self.frame_height))
+                elif not person_detected and self.recording and time() - self.last_person_detection_time >= self.recording_stop_delay:
+                    self.recording = False
+                    self.video_writer.release()
+                    self.video_writer = None
+
+                self.feed_record(im0)
+                self.display_fps(im0)
+                cv2.imshow('YOLOv8 Detection', im0)
             
+            else:
+                print(" Current Time Frame does not match target time frame \n")
+                break
+
             if cv2.waitKey(5) & 0xFF == 27:
                 break
-        
+            
         cap.release()
         cv2.destroyAllWindows()
 
