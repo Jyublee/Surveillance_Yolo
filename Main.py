@@ -10,7 +10,7 @@ import os
 class ObjectDetection:
     def __init__(self, capture_index):
         self.capture_index = capture_index
-        self.model = YOLO("yolov8n.pt")
+        self.model = YOLO("best.pt")
         self.annotator = None
         self.start_time = 0
         self.end_time = 0
@@ -182,8 +182,8 @@ class ObjectDetection:
         while True:
             # Check if the current time is within the specified time frame
             current_time = datetime.now().time()
-            start_time = datetime.strptime("11:00:00", "%H:%M:%S").time()            #Time Input for starting time 
-            end_time = datetime.strptime("13:00:00", "%H:%M:%S").time()              #Time Input for ending time 
+            start_time = datetime.strptime("11:00:00", "%H:%M:%S").time()
+            end_time = datetime.strptime("13:00:00", "%H:%M:%S").time()
 
             if start_time <= current_time <= end_time:
                 self.start_time = time()
